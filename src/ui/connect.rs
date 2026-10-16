@@ -19,7 +19,7 @@ pub struct ConnectPage {
     path_style: adw::SwitchRow,
     pub connect_button: gtk::Button,
     pub save_button: gtk::Button,
-    spinner: adw::Spinner,
+    spinner: gtk::Spinner,
 }
 
 impl ConnectPage {
@@ -69,7 +69,10 @@ impl ConnectPage {
             .label("Save Profile")
             .css_classes(["pill"])
             .build();
-        let spinner = adw::Spinner::builder().visible(false).build();
+        let spinner = gtk::Spinner::builder()
+            .spinning(true)
+            .visible(false)
+            .build();
         let buttons = gtk::Box::builder()
             .spacing(12)
             .halign(gtk::Align::Center)

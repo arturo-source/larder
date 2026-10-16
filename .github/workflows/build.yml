@@ -1,6 +1,7 @@
 name: Build
 
-# Builds Larder for Linux (x86_64 and aarch64 tarballs, .deb), Windows and macOS. Pushing a `v*` tag
+# Builds Larder for Linux (x86_64 and aarch64 tarballs, .deb), Windows and macOS, plus a source tarball
+# with all dependencies vendored (what the Flathub build downloads). Pushing a `v*` tag
 # publishes the packages, a SHA256SUMS file and build attestations as a GitHub release. Manual runs
 # and pull requests that touch packaging keep everything as workflow artifacts for testing, along
 # with a screenshot of the packaged app running on each platform.
@@ -233,9 +234,48 @@ jobs:
           name: screenshot-macos
           path: screenshot-*.png
 
+  source:
+    name: Vendored source
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-vendor-filterer
+      - name: Create tarball
+        run: |
+          version=$(cargo pkgid | sed 's/.*[#@]//')
+          name="larder-$version"
+          mkdir -p stage dist
+          git archive --prefix="$name/" HEAD | tar x -C stage
+          cd "stage/$name"
+          mkdir .cargo
+          # Only what Linux builds need (Flathub builds x86_64 and aarch64); crates for other
+          # platforms become empty stubs, which keeps the tarball about a third smaller.
+          cargo vendor-filterer --platform=x86_64-unknown-linux-gnu --platform=aarch64-unknown-linux-gnu \
+            vendor > .cargo/config.toml
+          cd ..
+          tar cJf "../dist/$name-vendored.tar.xz" "$name"
+          ls -l ../dist
+      - name: Check it builds offline
+        run: |
+          mkdir offline
+          tar xJf dist/*-vendored.tar.xz -C offline
+          cd offline/larder-*
+          CARGO_HOME="$RUNNER_TEMP/empty-cargo-home" cargo check --offline --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-source
+          path: dist/*
+
   release:
     name: Checksums, attestations & release
-    needs: [linux, windows, macos]
+    needs: [linux, windows, macos, source]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

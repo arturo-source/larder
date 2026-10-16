@@ -46,7 +46,8 @@ cargo test
   and `cargo doc` with warnings denied. `main` is protected: these checks must pass before merging.
 - `.github/workflows/build.yml` builds the packages: Linux x86_64 and aarch64 tarballs and `.deb`
   (built on Ubuntu 24.04), a Windows zip (MSYS2, with GTK bundled) and a macOS `.app` (Homebrew, with GTK
-  bundled). Every package is smoke-tested and screenshotted on its platform. Pushing a `v*` tag publishes
+  bundled), plus `larder-<version>-vendored.tar.xz`: the source with every Linux dependency vendored, which
+  builds offline (used by the Flathub build). Every package is smoke-tested and screenshotted on its platform. Pushing a `v*` tag publishes
   them with a `SHA256SUMS` file and build attestations as a GitHub release; manual runs and pull requests
   touching packaging keep them as workflow artifacts.
 

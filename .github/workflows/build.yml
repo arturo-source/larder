@@ -294,7 +294,13 @@ jobs:
           cat SHA256SUMS
       - name: Check the tag matches the version
         if: startsWith(github.ref, 'refs/tags/v')
-        run: ls dist | grep -q "^larder-${GITHUB_REF_NAME#v}-" || { echo "tag $GITHUB_REF_NAME does not match Cargo.toml"; exit 1; }
+        run: |
+          if ! ls dist | grep -q "^larder-${GITHUB_REF_NAME#v}-"; then
+            echo "Tag $GITHUB_REF_NAME does not match the version the packages were built with:"
+            ls dist
+            echo "Bump 'version' in Cargo.toml (and add a <release> to the metainfo) before tagging."
+            exit 1
+          fi
       - uses: actions/attest-build-provenance@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:

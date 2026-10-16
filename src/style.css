@@ -1,0 +1,32 @@
+/* Drop-to-upload hint shown over the object list while dragging files in. */
+.drop-hint {
+  margin: 12px;
+  border-radius: 12px;
+  border: 2px dashed var(--accent-color);
+  background-color: color-mix(in srgb, var(--accent-bg-color) 10%, var(--view-bg-color));
+}
+
+.drop-hint label {
+  font-size: 1.2em;
+  font-weight: bold;
+  color: var(--accent-color);
+}
+
+columnview.objects > listview > row > cell {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.preview-text {
+  font-family: monospace;
+  font-size: 0.9em;
+  padding: 8px;
+}
+
+.preview-frame {
+  border-radius: 12px;
+}
+
+.transfer-row {
+  padding: 8px 12px;
+}

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Larder
+Comment=Browse and manage S3-compatible object storage
+Exec=larder
+Icon=io.github.arturo_source.Larder
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;
+Keywords=S3;bucket;object;storage;cloud;AWS;MinIO;RustFS;
+StartupNotify=true

@@ -2,12 +2,12 @@
 
 ## Dependencies
 
-Rust (stable) plus GTK ≥ 4.14 and libadwaita ≥ 1.6 with their development files:
+Rust (stable) plus GTK ≥ 4.14 and libadwaita ≥ 1.5 with their development files:
 
 ```sh
 sudo pacman -S gtk4 libadwaita                     # Arch
 sudo dnf install gtk4-devel libadwaita-devel       # Fedora
-sudo apt install libgtk-4-dev libadwaita-1-dev     # Debian 13+ / Ubuntu 25.04+
+sudo apt install libgtk-4-dev libadwaita-1-dev     # Debian 13+ / Ubuntu 24.04+
 ```
 
 GTK also builds on Windows (MSYS2 or gvsbuild) and macOS (Homebrew), though Larder is mainly developed for Linux.
@@ -40,12 +40,20 @@ cargo test
 
 ## Continuous integration
 
-- `.github/workflows/ci.yml` runs on pull requests and pushes to `main`: `cargo fmt --check`,
-  `cargo clippy -D warnings`, the tests (including the end-to-end test against a RustFS service container)
-  and `cargo doc` with warnings denied.
-- `.github/workflows/build.yml` runs when a `v*` tag is pushed: it builds a release binary and attaches it
-  to a GitHub release for that tag. The binary is built on Debian 13
-  and needs a system with GTK 4 and libadwaita installed.
+- `.github/workflows/ci.yml` runs on pull requests and pushes to `main`, on Ubuntu 24.04 (the oldest
+  supported GTK and libadwaita): `cargo fmt --check`, `cargo clippy -D warnings`, validation of the desktop
+  file and AppStream metadata, the tests (including the end-to-end test against a RustFS service container)
+  and `cargo doc` with warnings denied. `main` is protected: these checks must pass before merging.
+- `.github/workflows/build.yml` builds the packages: Linux x86_64 and aarch64 tarballs and `.deb`
+  (built on Ubuntu 24.04), a Windows zip (MSYS2, with GTK bundled) and a macOS `.app` (Homebrew, with GTK
+  bundled). Every package is smoke-tested and screenshotted on its platform. Pushing a `v*` tag publishes
+  them with a `SHA256SUMS` file and build attestations as a GitHub release; manual runs and pull requests
+  touching packaging keep them as workflow artifacts.
+
+## Releasing
+
+1. Bump `version` in `Cargo.toml` and add a `<release>` entry to `data/io.github.arturo_source.Larder.metainfo.xml`.
+2. Merge, then tag: `git tag v0.2.0 && git push origin v0.2.0`. The tag must match the `Cargo.toml` version.
 
 ## Code layout
 

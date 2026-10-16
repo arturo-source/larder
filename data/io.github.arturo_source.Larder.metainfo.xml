@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.arturo_source.Larder</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Larder</name>
+  <summary>Browse and manage S3-compatible object storage</summary>
+  <developer id="io.github.arturo_source">
+    <name>Arturo Martínez</name>
+  </developer>
+
+  <description>
+    <p>
+      Larder is a desktop app for the buckets and objects you keep in Amazon S3 or any S3-compatible
+      service, such as RustFS, MinIO or Ceph.
+    </p>
+    <ul>
+      <li>Browse buckets and folders, search and sort objects</li>
+      <li>Upload files and whole folders by dragging them in, with progress for large files</li>
+      <li>Download, rename, move and delete objects and folders</li>
+      <li>Preview text files and images</li>
+      <li>Share objects with links that expire</li>
+      <li>Keep several connections as profiles</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.arturo_source.Larder.desktop</launchable>
+  <provides>
+    <binary>larder</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/arturo-source/larder</url>
+  <url type="bugtracker">https://github.com/arturo-source/larder/issues</url>
+  <url type="vcs-browser">https://github.com/arturo-source/larder</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/arturo-source/larder/v0.1.0/docs/screenshots/light.png</image>
+      <caption>Browsing a bucket with an image preview</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/arturo-source/larder/v0.1.0/docs/screenshots/dark.png</image>
+      <caption>Uploading a large file in dark mode</caption>
+    </screenshot>
+  </screenshots>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#99c1f1</color>
+    <color type="primary" scheme_preference="dark">#1a5fb4</color>
+  </branding>
+
+  <content_rating type="oars-1.1" />
+
+  <requires>
+    <display_length compare="ge">480</display_length>
+  </requires>
+  <recommends>
+    <internet>always</internet>
+  </recommends>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <releases>
+    <release version="0.1.0" date="2026-10-16">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

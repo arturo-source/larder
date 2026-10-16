@@ -1,5 +1,31 @@
 # Using Larder
 
+## Installing
+
+Download the package for your system from the [latest release](https://github.com/arturo-source/larder/releases/latest):
+
+| System | File | How |
+| --- | --- | --- |
+| Debian 13+, Ubuntu 24.04+ | `larder_*.deb` | `sudo apt install ./larder_*.deb` |
+| Any Linux with GTK ≥ 4.14 and libadwaita ≥ 1.5 | `larder-*-linux.tar.gz` | `tar xzf larder-*-linux.tar.gz -C ~/.local --strip-components=1`, then run `larder` (it also appears in your app grid) |
+| Windows 10/11 | `larder-*-windows.zip` | Unzip anywhere and run `bin\larder.exe` |
+| macOS (Apple Silicon) | `larder-*-macos.zip` | Unzip and move `Larder.app` to Applications. It isn't notarized, so the first time right-click it and choose **Open** |
+
+### Verifying downloads
+
+Every release has a `SHA256SUMS` file. Put it next to your download and run:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+Each file also has a [build attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations)
+proving it was built by this repository's release workflow. With the GitHub CLI:
+
+```sh
+gh attestation verify larder_0.1.0-1_amd64.deb --repo arturo-source/larder
+```
+
 ## Connecting
 
 Fill in the endpoint, region and keys, then **Connect**, or **Save Profile** to keep it for later. Saved

@@ -1,0 +1,68 @@
+name: CI
+
+# Checks that must pass before merging: formatting, lints, tests (including the end-to-end test
+# against a real S3 server) and docs.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  check:
+    name: Clippy, tests & docs
+    runs-on: ubuntu-latest
+    # Ubuntu's libadwaita is too old (we need >= 1.6), Debian trixie has 1.7.
+    container: debian:trixie
+    services:
+      rustfs:
+        image: rustfs/rustfs:latest
+        env:
+          RUSTFS_ACCESS_KEY: rustfsadmin
+          RUSTFS_SECRET_KEY: rustfsadmin
+    env:
+      LARDER_TEST_ENDPOINT: http://rustfs:9000
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+    steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates git \
+            libgtk-4-dev libadwaita-1-dev
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Wait for RustFS
+        run: |
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://rustfs:9000 && exit 0
+            sleep 2
+          done
+          echo "RustFS did not come up" && exit 1
+      - name: Tests
+        run: cargo test --locked
+      - name: Docs
+        run: cargo doc --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings

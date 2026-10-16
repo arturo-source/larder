@@ -17,3 +17,6 @@ Needs GTK ≥ 4.14 and libadwaita ≥ 1.6 (e.g. `libgtk-4-dev libadwaita-1-dev` 
 ```sh
 cargo run --release
 ```
+
+More in [docs/usage.md](docs/usage.md) (features, shortcuts, configuration) and
+[docs/development.md](docs/development.md) (building, tests, CI).

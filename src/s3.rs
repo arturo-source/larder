@@ -89,7 +89,7 @@ pub fn explain_code(code: &str) -> Option<&'static str> {
     })
 }
 
-/// "<explanation> (Code: server message)", or just "Code: message" for codes we don't know.
+/// `"<explanation> (Code: server message)"`, or just `"Code: message"` for codes we don't know.
 fn describe(code: &str, message: Option<&str>) -> String {
     let detail = match message.filter(|m| !m.is_empty()) {
         Some(m) => format!("{code}: {m}"),

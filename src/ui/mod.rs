@@ -702,7 +702,7 @@ impl Win {
     }
 
     /// Runs an S3 operation in the background: success shows a toast (unless the message is empty,
-    /// meaning "nothing happened"), failure opens an error dialog titled "<title> Failed".
+    /// meaning "nothing happened"), failure opens an error dialog titled `"<title> Failed"`.
     fn run_op<F>(self: &Rc<Self>, title: &'static str, refresh: Refresh, fut: F)
     where
         F: Future<Output = anyhow::Result<String>> + Send + 'static,

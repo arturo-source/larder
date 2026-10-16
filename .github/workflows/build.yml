@@ -219,6 +219,11 @@ jobs:
           sleep 10
           screencapture -x screenshot-macos.png
           kill -0 $pid && kill $pid
+          # CI Macs are VMs without a real GPU; a software-rendered screenshot shows whether the app itself is fine.
+          GSK_RENDERER=cairo Larder.app/Contents/MacOS/larder & pid=$!
+          sleep 10
+          screencapture -x screenshot-macos-software.png
+          kill -0 $pid && kill $pid
       - uses: actions/upload-artifact@v4
         with:
           name: package-macos-arm64

@@ -24,10 +24,11 @@ tokio = { version = "1.53.3", features = ["rt-multi-thread", "fs", "io-util", "m
 urlencoding = "2.1.3"
 
 
-# `cargo deb` packaging; dependencies (GTK, libadwaita, …) are detected from the binary.
+# `cargo deb` packaging. Library dependencies (GTK, libadwaita, …) are detected from the binary; the
+# icon theme and SVG loader are only "recommended" by GTK, but icons are broken without them.
 [package.metadata.deb]
 section = "net"
-depends = "$auto"
+depends = "$auto, adwaita-icon-theme, librsvg2-common"
 extended-description = "Browse buckets and folders, upload and download files, preview text and images and share objects with expiring links on Amazon S3 or any S3-compatible service."
 assets = [
   ["target/release/larder", "usr/bin/", "755"],

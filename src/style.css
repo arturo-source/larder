@@ -2,14 +2,14 @@
 .drop-hint {
   margin: 12px;
   border-radius: 12px;
-  border: 2px dashed var(--accent-color);
-  background-color: color-mix(in srgb, var(--accent-bg-color) 10%, var(--view-bg-color));
+  border: 2px dashed @accent_color;
+  background-color: mix(@view_bg_color, @accent_bg_color, 0.1);
 }
 
 .drop-hint label {
   font-size: 1.2em;
   font-weight: bold;
-  color: var(--accent-color);
+  color: @accent_color;
 }
 
 columnview.objects > listview > row > cell {

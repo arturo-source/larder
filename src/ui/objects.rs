@@ -175,7 +175,8 @@ impl ObjectsView {
             .title("Couldn't Load This Folder")
             .child(&retry_button)
             .build();
-        let loading = adw::Spinner::builder()
+        let loading = gtk::Spinner::builder()
+            .spinning(true)
             .width_request(32)
             .height_request(32)
             .halign(gtk::Align::Center)

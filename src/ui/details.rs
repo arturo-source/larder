@@ -117,7 +117,8 @@ impl DetailsPane {
         preview_stack.add_named(&text_scroll, Some("text"));
         preview_stack.add_named(&preview_note, Some("note"));
         preview_stack.add_named(
-            &adw::Spinner::builder()
+            &gtk::Spinner::builder()
+                .spinning(true)
                 .height_request(32)
                 .margin_top(24)
                 .margin_bottom(24)

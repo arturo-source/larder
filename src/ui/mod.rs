@@ -75,7 +75,7 @@ pub struct Win {
     bucket_menu: gtk::PopoverMenu,
     profile_label: gtk::Label,
     title: adw::WindowTitle,
-    busy: adw::Spinner,
+    busy: gtk::Spinner,
     search_bar: gtk::SearchBar,
     search_entry: gtk::SearchEntry,
     objects: objects::ObjectsView,
@@ -247,7 +247,8 @@ impl Win {
             .tooltip_text("Search (Ctrl+F)")
             .build();
         header.pack_end(&search_button);
-        let busy = adw::Spinner::builder()
+        let busy = gtk::Spinner::builder()
+            .spinning(true)
             .visible(false)
             .tooltip_text("Working…")
             .build();
@@ -496,9 +497,13 @@ impl Win {
             about.connect_activate(move |_, _| {
                 let dialog = adw::AboutDialog::builder()
                     .application_name(APP_NAME)
-                    .application_icon("network-server")
+                    .application_icon(APP_ID)
                     .version(env!("CARGO_PKG_VERSION"))
                     .comments("Browse and manage S3-compatible object storage")
+                    .developer_name("Arturo Martínez")
+                    .license_type(gtk::License::MitX11)
+                    .website("https://github.com/arturo-source/larder")
+                    .issue_url("https://github.com/arturo-source/larder/issues")
                     .build();
                 dialog.present(win.upgrade().as_ref());
             });

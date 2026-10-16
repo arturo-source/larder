@@ -1,7 +1,7 @@
 name: CI
 
 # Checks that must pass before merging: formatting, lints, tests (including the end-to-end test
-# against a real S3 server) and docs.
+# against a real S3 server), docs and the desktop/AppStream metadata.
 on:
   pull_request:
   push:
@@ -17,7 +17,7 @@ env:
 jobs:
   fmt:
     name: Formatting
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -27,36 +27,41 @@ jobs:
 
   check:
     name: Clippy, tests & docs
-    runs-on: ubuntu-latest
-    # Ubuntu's libadwaita is too old (we need >= 1.6), Debian trixie has 1.7.
-    container: debian:trixie
+    # Ubuntu 24.04 has the oldest GTK (4.14) and libadwaita (1.5) we support.
+    runs-on: ubuntu-24.04
     services:
       rustfs:
         image: rustfs/rustfs:latest
+        ports:
+          - 9000:9000
         env:
           RUSTFS_ACCESS_KEY: rustfsadmin
           RUSTFS_SECRET_KEY: rustfsadmin
     env:
-      LARDER_TEST_ENDPOINT: http://rustfs:9000
+      LARDER_TEST_ENDPOINT: http://localhost:9000
       AWS_ACCESS_KEY_ID: rustfsadmin
       AWS_SECRET_ACCESS_KEY: rustfsadmin
     steps:
       - name: Install system dependencies
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates git \
-            libgtk-4-dev libadwaita-1-dev
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev \
+            desktop-file-utils appstream
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Validate desktop file and AppStream metadata
+        run: |
+          desktop-file-validate data/*.desktop
+          appstreamcli validate --no-net data/*.metainfo.xml
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Wait for RustFS
         run: |
           for i in $(seq 1 30); do
-            curl -s -o /dev/null http://rustfs:9000 && exit 0
+            curl -s -o /dev/null http://localhost:9000 && exit 0
             sleep 2
           done
           echo "RustFS did not come up" && exit 1

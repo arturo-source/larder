@@ -1,3 +1,6 @@
+// Release builds on Windows are GUI apps: no console window next to the main window.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod config;
 mod runtime;
 mod s3;
@@ -10,6 +13,10 @@ fn main() -> glib::ExitCode {
     // `<app> --connect <profile>` connects to a saved profile on startup. GApplication would reject
     // unknown options, so we parse ours here and only pass the program name on.
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--version") {
+        println!("larder {}", env!("CARGO_PKG_VERSION"));
+        return glib::ExitCode::SUCCESS;
+    }
     let connect_to = args
         .iter()
         .position(|a| a == "--connect")
@@ -21,6 +28,7 @@ fn main() -> glib::ExitCode {
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.connect_startup(|app| {
+        gtk::Window::set_default_icon_name(ui::APP_ID);
         load_css();
         ui::set_accels(app);
     });

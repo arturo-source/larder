@@ -3,16 +3,16 @@
 A desktop app for browsing and managing S3-compatible object storage: Amazon S3, RustFS, MinIO, Ceph and more.
 Built with Rust, GTK 4 and libadwaita.
 
-![Larder in light mode](docs/screenshot-light.webp)
+![Larder in light mode](docs/screenshots/light.webp)
 
 Browse buckets and folders, upload files and folders by dragging them in (large files use multipart uploads
 with progress), download, rename, delete, preview text and images, and share objects with expiring links.
 
-![Larder in dark mode, uploading a file](docs/screenshot-dark.webp)
+![Larder in dark mode, uploading a file](docs/screenshots/dark.webp)
 
 ## Build
 
-Needs GTK ≥ 4.14 and libadwaita ≥ 1.6 (e.g. `libgtk-4-dev libadwaita-1-dev` on Debian/Ubuntu).
+Downloads for Linux, Windows and macOS are on the [releases page](https://github.com/arturo-source/larder/releases). To build from source you need GTK ≥ 4.14 and libadwaita ≥ 1.5 (e.g. `libgtk-4-dev libadwaita-1-dev` on Debian/Ubuntu).
 
 ```sh
 cargo run --release

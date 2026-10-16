@@ -1,12 +1,9 @@
 name: Build
 
-# Builds a release binary for Linux on every push to main (downloadable from the run's artifacts)
-# and attaches it to a GitHub release when a `v*` tag is pushed.
+# Builds a release binary for Linux and attaches it to a GitHub release when a `v*` tag is pushed.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -38,12 +35,7 @@ jobs:
           strip "$name/larder"
           tar czf "$name.tar.gz" "$name"
           echo "PACKAGE=$name.tar.gz" >> "$GITHUB_ENV"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: larder-x86_64-linux
-          path: ${{ env.PACKAGE }}
       - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.PACKAGE }}

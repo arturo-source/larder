@@ -43,8 +43,8 @@ cargo test
 - `.github/workflows/ci.yml` runs on pull requests and pushes to `main`: `cargo fmt --check`,
   `cargo clippy -D warnings`, the tests (including the end-to-end test against a RustFS service container)
   and `cargo doc` with warnings denied.
-- `.github/workflows/build.yml` builds a release binary on pushes to `main` (downloadable from the run's
-  artifacts) and attaches it to a GitHub release when a `v*` tag is pushed. The binary is built on Debian 13
+- `.github/workflows/build.yml` runs when a `v*` tag is pushed: it builds a release binary and attaches it
+  to a GitHub release for that tag. The binary is built on Debian 13
   and needs a system with GTK 4 and libadwaita installed.
 
 ## Code layout

@@ -30,6 +30,7 @@ jobs:
       - name: Build
         run: cargo build --release --locked
       - name: Package
+        shell: bash # container steps default to sh, which lacks ${var//…}
         run: |
           name="larder-${GITHUB_REF_NAME//\//-}-x86_64-linux"
           mkdir "$name"

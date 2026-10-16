@@ -38,16 +38,8 @@ impl Config {
         dirs::config_dir().map(|d| d.join("larder").join("config.json"))
     }
 
-    /// Where profiles lived before the app was renamed from s3gui; read if no new config exists yet.
-    fn legacy_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|d| d.join("s3gui").join("config.json"))
-    }
-
     pub fn load() -> Self {
-        [Self::path(), Self::legacy_path()]
-            .into_iter()
-            .flatten()
-            .find(|p| p.exists())
+        Self::path()
             .and_then(|p| std::fs::read_to_string(p).ok())
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()

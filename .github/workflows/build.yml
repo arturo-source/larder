@@ -51,12 +51,12 @@ jobs:
           name="larder-$version-${{ matrix.arch }}-linux"
           strip target/release/larder
           # Laid out like an install prefix: extracting it into ~/.local installs Larder for the user.
-          mkdir -p "$name/bin" "$name/share/applications" "$name/share/metainfo" dist
+          mkdir -p "$name/bin" "$name/share/applications" "$name/share/metainfo" "$name/share/doc/larder" dist
           cp target/release/larder "$name/bin/"
           cp data/*.desktop "$name/share/applications/"
           cp data/*.metainfo.xml "$name/share/metainfo/"
           cp -r data/icons "$name/share/"
-          cp LICENSE README.md "$name/"
+          cp LICENSE README.md "$name/share/doc/larder/"
           tar czf "dist/$name.tar.gz" "$name"
           cargo deb --no-build --no-strip --output dist/
           ls -l dist

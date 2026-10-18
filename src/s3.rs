@@ -263,6 +263,17 @@ impl ObjectEdit {
     }
 }
 
+/// One stored version of an object, or a delete marker hiding it.
+#[derive(Clone, Debug)]
+pub struct ObjectVersion {
+    pub version_id: String,
+    pub is_latest: bool,
+    pub is_delete_marker: bool,
+    pub size: i64,
+    pub modified: Option<String>,
+    modified_ts: i64,
+}
+
 #[derive(Clone)]
 pub enum Preview {
     Text { text: String, truncated: bool },
@@ -787,10 +798,22 @@ fn collect_files(dir: &Path) -> Result<Vec<(PathBuf, String)>> {
 }
 
 pub async fn download(c: &Client, bucket: &str, key: &str, dest: &Path) -> Result<u64> {
+    download_version(c, bucket, key, None, dest).await
+}
+
+/// Downloads one object, or one specific version of it.
+pub async fn download_version(
+    c: &Client,
+    bucket: &str,
+    key: &str,
+    version_id: Option<&str>,
+    dest: &Path,
+) -> Result<u64> {
     let out = c
         .get_object()
         .bucket(bucket)
         .key(key)
+        .set_version_id(version_id.map(str::to_string))
         .send()
         .await
         .map_err(sdk_err)?;
@@ -873,6 +896,82 @@ pub async fn rename(c: &Client, bucket: &str, from: &str, to: &str) -> Result<us
         copy_object(c, bucket, from, to).await?;
         delete_keys(c, bucket, &[from.to_string()]).await
     }
+}
+
+/// All versions and delete markers of exactly `key`, newest first. Empty for buckets without versioning
+/// (apart from the single `null` version).
+pub async fn list_versions(c: &Client, bucket: &str, key: &str) -> Result<Vec<ObjectVersion>> {
+    let mut versions = Vec::new();
+    let (mut key_marker, mut version_marker) = (None, None);
+    loop {
+        let out = c
+            .list_object_versions()
+            .bucket(bucket)
+            .prefix(key)
+            .set_key_marker(key_marker)
+            .set_version_id_marker(version_marker)
+            .send()
+            .await
+            .map_err(sdk_err)?;
+        for v in out.versions().iter().filter(|v| v.key() == Some(key)) {
+            versions.push(ObjectVersion {
+                version_id: v.version_id().unwrap_or("null").to_string(),
+                is_latest: v.is_latest().unwrap_or(false),
+                is_delete_marker: false,
+                size: v.size().unwrap_or(0),
+                modified: v.last_modified().map(fmt_time),
+                modified_ts: v.last_modified().map_or(0, |t| t.secs()),
+            });
+        }
+        for m in out.delete_markers().iter().filter(|m| m.key() == Some(key)) {
+            versions.push(ObjectVersion {
+                version_id: m.version_id().unwrap_or("null").to_string(),
+                is_latest: m.is_latest().unwrap_or(false),
+                is_delete_marker: true,
+                size: 0,
+                modified: m.last_modified().map(fmt_time),
+                modified_ts: m.last_modified().map_or(0, |t| t.secs()),
+            });
+        }
+        if !out.is_truncated().unwrap_or(false) {
+            break;
+        }
+        key_marker = out.next_key_marker().map(str::to_string);
+        version_marker = out.next_version_id_marker().map(str::to_string);
+    }
+    // The latest first even when timestamps tie (versions written within the same second).
+    versions.sort_by_key(|v| (!v.is_latest, std::cmp::Reverse(v.modified_ts)));
+    Ok(versions)
+}
+
+/// Makes an older version the current one again by copying it on top of the key (a new version).
+pub async fn restore_version(c: &Client, bucket: &str, key: &str, version_id: &str) -> Result<()> {
+    let source = format!(
+        "{bucket}/{}?versionId={}",
+        urlencoding::encode(key).replace("%2F", "/"),
+        urlencoding::encode(version_id)
+    );
+    c.copy_object()
+        .bucket(bucket)
+        .copy_source(source)
+        .key(key)
+        .send()
+        .await
+        .map_err(sdk_err)
+        .with_context(|| format!("restoring {key}"))?;
+    Ok(())
+}
+
+/// Permanently deletes one version, or a delete marker (which brings the object back).
+pub async fn delete_version(c: &Client, bucket: &str, key: &str, version_id: &str) -> Result<()> {
+    c.delete_object()
+        .bucket(bucket)
+        .key(key)
+        .version_id(version_id)
+        .send()
+        .await
+        .map_err(sdk_err)?;
+    Ok(())
 }
 
 pub async fn head(c: &Client, bucket: &str, key: &str) -> Result<ObjectDetails> {
@@ -1173,6 +1272,71 @@ mod tests {
         assert!(err.starts_with("Could not reach the server"), "{err}");
     }
 
+    /// Versioning round trip. Servers that can't enable versioning skip it.
+    async fn versions_roundtrip(c: &Client, name: &str, dir: &Path) -> Result<()> {
+        use aws_sdk_s3::types::{BucketVersioningStatus, VersioningConfiguration};
+        // Its own bucket: a versioned bucket keeps delete markers that `delete_bucket` can't clear.
+        let bucket = &format!("{name}-ver");
+        create_bucket(c, bucket, "us-east-1").await?;
+        let enabled = c
+            .put_bucket_versioning()
+            .bucket(bucket)
+            .versioning_configuration(
+                VersioningConfiguration::builder()
+                    .status(BucketVersioningStatus::Enabled)
+                    .build(),
+            )
+            .send()
+            .await;
+        if enabled.is_err() {
+            return delete_bucket(c, bucket, false).await.map(|_| ());
+        }
+        let progress = Progress::new("versions");
+        let (v1, v2) = (dir.join("v1.txt"), dir.join("v2.txt"));
+        std::fs::write(&v1, "first")?;
+        std::fs::write(&v2, "second version")?;
+        upload_file(c, bucket, "ver/doc.txt", &v1, &progress).await?;
+        upload_file(c, bucket, "ver/doc.txt", &v2, &progress).await?;
+        upload_file(c, bucket, "ver/doc.txt.other", &v1, &progress).await?;
+
+        let versions = list_versions(c, bucket, "ver/doc.txt").await?;
+        assert_eq!(versions.len(), 2, "{versions:?}");
+        assert!(versions[0].is_latest && versions[0].size == 14);
+        let old = versions[1].clone();
+        assert!(!old.is_latest && old.size == 5);
+
+        download_version(
+            c,
+            bucket,
+            "ver/doc.txt",
+            Some(&old.version_id),
+            &dir.join("old.txt"),
+        )
+        .await?;
+        assert_eq!(std::fs::read_to_string(dir.join("old.txt"))?, "first");
+
+        restore_version(c, bucket, "ver/doc.txt", &old.version_id).await?;
+        assert_eq!(head(c, bucket, "ver/doc.txt").await?.size, 5);
+        assert_eq!(list_versions(c, bucket, "ver/doc.txt").await?.len(), 3);
+
+        // Deleting adds a marker; removing the marker brings the object back.
+        delete_keys(c, bucket, &["ver/doc.txt".to_string()]).await?;
+        assert!(head(c, bucket, "ver/doc.txt").await.is_err());
+        let versions = list_versions(c, bucket, "ver/doc.txt").await?;
+        assert!(versions[0].is_delete_marker && versions[0].is_latest);
+        delete_version(c, bucket, "ver/doc.txt", &versions[0].version_id).await?;
+        assert_eq!(head(c, bucket, "ver/doc.txt").await?.size, 5);
+
+        // Wipe every version so the bucket can be deleted at the end of the test.
+        for key in ["ver/doc.txt", "ver/doc.txt.other"] {
+            for v in list_versions(c, bucket, key).await? {
+                delete_version(c, bucket, key, &v.version_id).await?;
+            }
+        }
+        delete_bucket(c, bucket, false).await?;
+        Ok(())
+    }
+
     #[test]
     fn edit_validation() {
         let ok = ObjectEdit::default();
@@ -1364,6 +1528,7 @@ mod tests {
         assert!(err.to_string().contains("doesn't exist"), "{err}");
         delete_bucket(&c, &bucket, true).await?;
         assert!(!list_buckets(&c).await?.iter().any(|b| b.name == bucket));
+        versions_roundtrip(&c, &bucket, &tmp).await?;
         std::fs::remove_dir_all(tmp)?;
         Ok(())
     }

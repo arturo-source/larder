@@ -43,8 +43,9 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
+          # librsvg2-common (the SVG pixbuf loader GTK 4.14 draws icons with) and the icon theme go into the AppImage.
           sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev \
-            xvfb imagemagick
+            librsvg2-common adwaita-icon-theme xvfb imagemagick
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -92,6 +93,13 @@ jobs:
             --plugin gtk
           mkdir -p AppDir/usr/share/metainfo
           cp data/*.metainfo.xml AppDir/usr/share/metainfo/
+          # The plugin forces GTK_THEME=Adwaita, which switches libadwaita's own stylesheet off and leaves the
+          # app looking like plain GTK; libadwaita picks the right style (and light/dark) by itself.
+          sed -i '/^export GTK_THEME=/d' AppDir/apprun-hooks/linuxdeploy-plugin-gtk.sh
+          # The plugin doesn't bundle icon themes; without Adwaita most symbolic icons are missing.
+          mkdir -p AppDir/usr/share/icons
+          cp -r /usr/share/icons/Adwaita AppDir/usr/share/icons/
+          rm -rf AppDir/usr/share/icons/Adwaita/cursors
           ARCH=$arch appimagetool AppDir "dist/larder-$version-$arch.AppImage"
           ls -l dist
       - name: Smoke test
@@ -99,6 +107,8 @@ jobs:
           # No APPIMAGE_EXTRACT_AND_RUN here: this is the real FUSE mount, which must work without libfuse2.
           chmod +x dist/*.AppImage
           dist/*.AppImage --version
+          xvfb-run -s "-screen 0 1280x800x24" sh -c \
+            'dist/*.AppImage & sleep 8; import -window root screenshot-appimage-${{ matrix.arch }}.png; kill $!'
           sudo apt-get install -y ./dist/*.deb
           larder --version
           xvfb-run -s "-screen 0 1280x800x24" sh -c \

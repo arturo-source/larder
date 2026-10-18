@@ -19,6 +19,28 @@ struct VersionsView {
     entry: Entry,
 }
 
+/// What deleting a version for good will do. `below` is the next older entry: (is a delete marker, date).
+fn delete_message(is_marker: bool, is_latest: bool, below: Option<(bool, &str)>) -> String {
+    if is_marker {
+        return "The object will show up again.".into();
+    }
+    if !is_latest {
+        return "This version can't be recovered.".into();
+    }
+    match below {
+        None => "This is the only version: the object will be gone for good.".into(),
+        Some((true, _)) => {
+            "This is the current version, and a delete marker sits below it, so the \
+                            object will look deleted. This version can't be recovered."
+                .into()
+        }
+        Some((false, date)) => format!(
+            "This is the current version. The previous one, from {date}, will become current. \
+             This version can't be recovered."
+        ),
+    }
+}
+
 impl Win {
     pub(super) fn show_versions(self: &Rc<Self>) {
         let selected = self.objects.selected();
@@ -120,7 +142,10 @@ impl Win {
 
     fn fill_versions(self: &Rc<Self>, view: &Rc<VersionsView>, versions: &[ObjectVersion]) {
         view.list.remove_all();
-        for v in versions {
+        for (i, v) in versions.iter().enumerate() {
+            let below = versions
+                .get(i + 1)
+                .map(|b| (b.is_delete_marker, b.modified.clone().unwrap_or_default()));
             let when = v.modified.clone().unwrap_or_default();
             let row = adw::ActionRow::builder()
                 .title(if v.is_delete_marker {
@@ -165,9 +190,13 @@ impl Win {
                     };
                     let key = view.entry.key.clone();
                     let id = id.clone();
-                    this.version_op(&view, "Restore", "Restored the older version", async move {
-                        s3::restore_version(&client, &bucket, &key, &id).await
-                    });
+                    this.version_op(
+                        &view,
+                        "Restore",
+                        "Restored the older version",
+                        true,
+                        async move { s3::restore_version(&client, &bucket, &key, &id).await },
+                    );
                 });
             }
             let delete = button(
@@ -179,11 +208,12 @@ impl Win {
                 },
             );
             delete.add_css_class("destructive-action");
-            let (this, view_c, id, marker) = (
+            let (this, view_c, id, marker, latest) = (
                 self.clone(),
                 view.clone(),
                 v.version_id.clone(),
                 v.is_delete_marker,
+                v.is_latest,
             );
             delete.connect_clicked(move |_| {
                 let (this2, view2, id2) = (this.clone(), view_c.clone(), id.clone());
@@ -195,11 +225,11 @@ impl Win {
                     } else {
                         "Delete Version Permanently?"
                     },
-                    if marker {
-                        "The object will show up again."
-                    } else {
-                        "This version can't be recovered."
-                    },
+                    &delete_message(
+                        marker,
+                        latest,
+                        below.as_ref().map(|(m, d)| (*m, d.as_str())),
+                    ),
                     if marker { "Remove" } else { "Delete" },
                     !marker,
                     move || {
@@ -208,9 +238,13 @@ impl Win {
                         };
                         let key = view2.entry.key.clone();
                         let id = id2.clone();
-                        this2.version_op(&view2, "Delete", "Deleted the version", async move {
-                            s3::delete_version(&client, &bucket, &key, &id).await
-                        });
+                        this2.version_op(
+                            &view2,
+                            "Delete",
+                            "Deleted the version",
+                            marker,
+                            async move { s3::delete_version(&client, &bucket, &key, &id).await },
+                        );
                     },
                 );
             });
@@ -218,25 +252,37 @@ impl Win {
         }
     }
 
-    /// Runs a change to the object's versions, then refreshes the dialog, the listing and the details pane.
+    /// Runs a change to the object's versions, then refreshes the listing and the details pane, and the
+    /// dialog too unless `close_when_done` (the goal was reached, e.g. an older version restored).
     fn version_op(
         self: &Rc<Self>,
         view: &Rc<VersionsView>,
         title: &'static str,
         done: &'static str,
+        close_when_done: bool,
         fut: impl Future<Output = anyhow::Result<()>> + Send + 'static,
     ) {
         view.stack.set_visible_child_name("loading");
         let (this, view) = (self.clone(), view.clone());
         glib::spawn_future_local(async move {
-            match bg(fut).await {
-                Ok(()) => this.toast(done),
-                Err(e) => this.error(&format!("{title} Failed"), &format!("{e:#}")),
-            }
+            let ok = match bg(fut).await {
+                Ok(()) => {
+                    this.toast(done);
+                    true
+                }
+                Err(e) => {
+                    this.error(&format!("{title} Failed"), &format!("{e:#}"));
+                    false
+                }
+            };
             this.state.borrow_mut().details_key = None;
             this.load_details(view.entry.clone());
             this.reload();
-            this.load_versions(&view);
+            if ok && close_when_done {
+                view.dialog.close();
+            } else {
+                this.load_versions(&view);
+            }
         });
     }
 
@@ -265,5 +311,20 @@ impl Win {
                 Err(e) => this.error("Download Failed", &format!("{e:#}")),
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delete_messages() {
+        assert!(delete_message(true, true, None).contains("show up again"));
+        assert!(delete_message(false, false, Some((false, "x"))).contains("can't be recovered"));
+        assert!(delete_message(false, true, None).contains("only version"));
+        assert!(delete_message(false, true, Some((true, "x"))).contains("delete marker"));
+        let m = delete_message(false, true, Some((false, "2026-10-18 20:04")));
+        assert!(m.contains("previous one, from 2026-10-18 20:04"), "{m}");
     }
 }

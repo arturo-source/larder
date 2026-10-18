@@ -7,10 +7,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow, bail};
+use aws_config::default_provider::credentials::DefaultCredentialsChain;
 use aws_sdk_s3::Client;
 use aws_sdk_s3::config::http::HttpResponse;
 use aws_sdk_s3::config::{
     BehaviorVersion, Credentials, Region, RequestChecksumCalculation, ResponseChecksumValidation,
+    SharedCredentialsProvider,
 };
 use aws_sdk_s3::error::{DisplayErrorContext, ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::presigning::PresigningConfig;
@@ -36,11 +38,30 @@ const MAX_PARTS: u64 = 10_000;
 /// Parts of one file uploaded concurrently.
 const PART_CONCURRENCY: usize = 4;
 
-pub fn make_client(p: &Profile) -> Client {
-    let creds = Credentials::new(&p.access_key, &p.secret_key, None, None, "larder");
+/// Builds a client for `p`. With no access key and secret key it uses the standard AWS credential chain
+/// (environment variables, `~/.aws` files and `AWS_PROFILE`, SSO, credential processes, instance roles).
+/// Must run on the tokio runtime.
+pub async fn make_client(p: &Profile) -> Client {
+    let region = Region::new(p.region.clone());
+    let creds = if uses_aws_chain(p) {
+        SharedCredentialsProvider::new(
+            DefaultCredentialsChain::builder()
+                .region(region.clone())
+                .build()
+                .await,
+        )
+    } else {
+        SharedCredentialsProvider::new(Credentials::new(
+            &p.access_key,
+            &p.secret_key,
+            None,
+            None,
+            "larder",
+        ))
+    };
     let mut builder = aws_sdk_s3::Config::builder()
         .behavior_version(BehaviorVersion::latest())
-        .region(Region::new(p.region.clone()))
+        .region(region)
         .credentials_provider(creds)
         .force_path_style(p.path_style)
         // Many S3-compatible servers don't support the newer default checksums.
@@ -50,6 +71,11 @@ pub fn make_client(p: &Profile) -> Client {
         builder = builder.endpoint_url(p.endpoint.trim());
     }
     Client::from_conf(builder.build())
+}
+
+/// Profiles without any key use the standard AWS credential chain instead of fixed keys.
+fn uses_aws_chain(p: &Profile) -> bool {
+    p.access_key.is_empty() && p.secret_key.is_empty()
 }
 
 /// Plain-language explanation for common S3 error codes.
@@ -126,9 +152,15 @@ where
         };
     }
     match &e {
-        SdkError::DispatchFailure(_) | SdkError::TimeoutError(_) => {
+        SdkError::DispatchFailure(d) if d.is_io() || d.is_timeout() => {
             anyhow!("Could not reach the server: {}", root_cause(&e))
         }
+        SdkError::TimeoutError(_) => anyhow!("Could not reach the server: {}", root_cause(&e)),
+        // The request never left: most often no credentials could be found (e.g. empty AWS credential chain).
+        SdkError::DispatchFailure(_) => anyhow!(
+            "Could not send the request, check your credentials: {}",
+            root_cause(&e)
+        ),
         // HEAD requests have no error body, so only the status code tells us what happened.
         SdkError::ServiceError(ctx) => match ctx.raw().status().as_u16() {
             403 => anyhow!(describe("AccessDenied", None)),
@@ -987,13 +1019,28 @@ mod tests {
     async fn unreachable_server() {
         let c = make_client(&Profile {
             endpoint: "http://127.0.0.1:1".into(),
+            access_key: "key".into(),
+            secret_key: "secret".into(),
             ..Profile::default()
-        });
+        })
+        .await;
         let err = list_buckets(&c)
             .await
             .expect_err("nothing listens on port 1")
             .to_string();
         assert!(err.starts_with("Could not reach the server"), "{err}");
+    }
+
+    #[test]
+    fn empty_keys_use_the_aws_chain() {
+        let mut p = Profile::default_without_keys();
+        assert!(uses_aws_chain(&p));
+        p.access_key = "key".into();
+        assert!(!uses_aws_chain(&p));
+        p.secret_key = "secret".into();
+        assert!(!uses_aws_chain(&p));
+        p.access_key.clear();
+        assert!(!uses_aws_chain(&p));
     }
 
     #[test]
@@ -1013,7 +1060,8 @@ mod tests {
         let c = make_client(&Profile {
             endpoint,
             ..Profile::default()
-        });
+        })
+        .await;
         let bucket = format!("larder-test-{}", std::process::id());
         create_bucket(&c, &bucket, "us-east-1").await?;
         assert!(list_buckets(&c).await?.iter().any(|b| b.name == bucket));

@@ -33,6 +33,9 @@ profiles connect with a single click. Leave the endpoint empty for Amazon S3; en
 for most self-hosted servers (RustFS, MinIO, …).
 
 Profiles are stored in `~/.config/larder/config.json`. **Secret keys are stored there in plain text.**
+Leave the access and secret keys empty to use the standard AWS credentials instead: environment variables,
+`~/.aws/credentials` and `~/.aws/config` (choose a profile with `AWS_PROFILE`), SSO, credential processes or an
+instance role. Nothing secret is then stored in the profile.
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` and `LARDER_ENDPOINT` prefill the form, and
 `larder --connect <profile>` connects to a saved profile on startup.
 

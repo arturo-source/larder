@@ -48,7 +48,10 @@ impl ConnectPage {
             .build();
         let form = adw::PreferencesGroup::builder()
             .title("Connection")
-            .description("Leave the endpoint empty to use Amazon S3")
+            .description(
+                "Leave the endpoint empty to use Amazon S3, and the keys empty to use your AWS \
+                 credentials (environment, ~/.aws, SSO)",
+            )
             .build();
         for row in [
             name.upcast_ref::<gtk::Widget>(),

@@ -810,9 +810,10 @@ impl Win {
 
     fn connect_with(self: &Rc<Self>, profile: Profile) {
         self.connect.set_busy(true);
-        let client = s3::make_client(&profile);
         let this = self.clone();
         glib::spawn_future_local(async move {
+            let p = profile.clone();
+            let client = bg(async move { s3::make_client(&p).await }).await;
             let c = client.clone();
             let result = bg(async move { s3::list_buckets(&c).await }).await;
             this.connect.set_busy(false);

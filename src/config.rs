@@ -27,6 +27,18 @@ impl Default for Profile {
     }
 }
 
+#[cfg(test)]
+impl Profile {
+    /// A profile that ignores the environment, so tests behave the same everywhere.
+    pub fn default_without_keys() -> Self {
+        Self {
+            access_key: String::new(),
+            secret_key: String::new(),
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     pub profiles: Vec<Profile>,

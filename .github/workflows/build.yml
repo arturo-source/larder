@@ -1,6 +1,6 @@
 name: Build
 
-# Builds Larder for Linux (x86_64 and aarch64 tarballs, .deb), Windows and macOS, plus a source tarball
+# Builds Larder for Linux (x86_64 and aarch64 tarballs, .deb and AppImage), Windows and macOS, plus a source tarball
 # with all dependencies vendored (what the Flathub build downloads). Pushing a `v*` tag
 # publishes the packages, a SHA256SUMS file and build attestations as a GitHub release. Manual runs
 # and pull requests that touch packaging keep everything as workflow artifacts for testing, along
@@ -61,8 +61,37 @@ jobs:
           tar czf "dist/$name.tar.gz" "$name"
           cargo deb --no-build --no-strip --output dist/
           ls -l dist
+      - name: AppImage
+        run: |
+          version=$(cargo pkgid | sed 's/.*[#@]//')
+          arch=$(uname -m)
+          tools=$RUNNER_TEMP/tools
+          mkdir -p "$tools"
+          base=https://github.com/linuxdeploy
+          curl -fsSL -o "$tools/linuxdeploy" "$base/linuxdeploy/releases/download/continuous/linuxdeploy-$arch.AppImage"
+          curl -fsSL -o "$tools/linuxdeploy-plugin-gtk.sh" "$base/linuxdeploy-plugin-gtk/raw/master/linuxdeploy-plugin-gtk.sh"
+          # appimagetool >= 1.9 writes the type2 runtime, which has FUSE built in: no libfuse2 needed to run the result.
+          curl -fsSL -o "$tools/appimagetool" \
+            "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-$arch.AppImage"
+          chmod +x "$tools"/*
+          export PATH="$tools:$PATH"
+          # The build tools are AppImages too, and the runner has no libfuse2, so run them extracted.
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          # Collects the binary, its libraries, the GTK/GLib schemas, pixbuf loaders and icon themes into an AppDir.
+          DEPLOY_GTK_VERSION=4 linuxdeploy --appdir AppDir \
+            --executable target/release/larder \
+            --desktop-file data/io.github.arturo_source.Larder.desktop \
+            --icon-file data/icons/hicolor/512x512/apps/io.github.arturo_source.Larder.png \
+            --plugin gtk
+          mkdir -p AppDir/usr/share/metainfo
+          cp data/*.metainfo.xml AppDir/usr/share/metainfo/
+          ARCH=$arch appimagetool AppDir "dist/larder-$version-$arch.AppImage"
+          ls -l dist
       - name: Smoke test
         run: |
+          # No APPIMAGE_EXTRACT_AND_RUN here: this is the real FUSE mount, which must work without libfuse2.
+          chmod +x dist/*.AppImage
+          dist/*.AppImage --version
           sudo apt-get install -y ./dist/*.deb
           larder --version
           xvfb-run -s "-screen 0 1280x800x24" sh -c \

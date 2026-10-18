@@ -8,6 +8,13 @@ name: Build
 on:
   push:
     tags: ["v*"]
+    # Builds on main exist to fill the caches: a tag can only read caches saved on the default branch.
+    branches: [main]
+    paths:
+      - .github/workflows/build.yml
+      - Cargo.toml
+      - Cargo.lock
+      - data/**
   workflow_dispatch:
   pull_request:
     paths:
@@ -116,7 +123,7 @@ jobs:
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
-          update: true
+          cache: true
           install: >-
             zip
             mingw-w64-ucrt-x86_64-gcc
@@ -127,6 +134,12 @@ jobs:
             mingw-w64-ucrt-x86_64-gtk4
             mingw-w64-ucrt-x86_64-libadwaita
             mingw-w64-ucrt-x86_64-adwaita-icon-theme
+      # rust-cache can't find the MSYS2 toolchain, so cache the build output directly.
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: windows-target-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-target-
       - name: Build
         run: cargo build --release --locked
       - name: Package

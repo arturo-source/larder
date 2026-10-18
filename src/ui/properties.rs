@@ -8,11 +8,13 @@ use adw::prelude::*;
 
 use crate::s3::{ObjectDetails, ObjectEdit};
 
-type Pairs = Rc<RefCell<Vec<(adw::EntryRow, adw::EntryRow, gtk::ListBox)>>>;
+type Pairs = Rc<RefCell<Vec<(gtk::Entry, gtk::Entry, gtk::Box)>>>;
 
-/// A group of editable name/value pairs, each a small list of two entry rows, with an Add button.
+/// A group of editable name/value rows with an Add button.
 struct PairsEditor {
     group: adw::PreferencesGroup,
+    /// Holds the rows, spaced apart (a preferences group stacks plain widgets with no gap).
+    rows: gtk::Box,
     pairs: Pairs,
 }
 
@@ -30,15 +32,20 @@ impl PairsEditor {
             .css_classes(["flat"])
             .build();
         group.set_header_suffix(Some(&add));
-        let editor = Self { group, pairs };
+        let rows = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(8)
+            .build();
+        group.add(&rows);
+        let editor = Self { group, rows, pairs };
         for (k, v) in initial {
             editor.add_row(k, v);
         }
         add.connect_clicked({
-            let group = editor.group.clone();
+            let rows = editor.rows.clone();
             let pairs = editor.pairs.clone();
             move |_| {
-                let key = Self::push_row(&group, &pairs, "", "");
+                let key = Self::push_row(&rows, &pairs, "", "");
                 key.grab_focus();
             }
         });
@@ -46,40 +53,40 @@ impl PairsEditor {
     }
 
     fn add_row(&self, key: &str, value: &str) {
-        Self::push_row(&self.group, &self.pairs, key, value);
+        Self::push_row(&self.rows, &self.pairs, key, value);
     }
 
-    fn push_row(
-        group: &adw::PreferencesGroup,
-        pairs: &Pairs,
-        key: &str,
-        value: &str,
-    ) -> adw::EntryRow {
-        let key_entry = adw::EntryRow::builder().title("Name").text(key).build();
-        let value_entry = adw::EntryRow::builder().title("Value").text(value).build();
+    fn push_row(rows: &gtk::Box, pairs: &Pairs, key: &str, value: &str) -> gtk::Entry {
+        let key_entry = gtk::Entry::builder()
+            .text(key)
+            .placeholder_text("Name")
+            .hexpand(true)
+            .build();
+        let value_entry = gtk::Entry::builder()
+            .text(value)
+            .placeholder_text("Value")
+            .hexpand(true)
+            .build();
         let remove = gtk::Button::builder()
             .icon_name("user-trash-symbolic")
             .tooltip_text("Remove")
             .valign(gtk::Align::Center)
             .css_classes(["flat"])
             .build();
-        value_entry.add_suffix(&remove);
-        let list = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .css_classes(["boxed-list"])
-            .build();
-        list.append(&key_entry);
-        list.append(&value_entry);
-        group.add(&list);
+        let row = gtk::Box::builder().spacing(6).build();
+        row.append(&key_entry);
+        row.append(&value_entry);
+        row.append(&remove);
+        rows.append(&row);
         pairs
             .borrow_mut()
-            .push((key_entry.clone(), value_entry, list.clone()));
+            .push((key_entry.clone(), value_entry, row.clone()));
         remove.connect_clicked({
-            let group = group.clone();
+            let rows = rows.clone();
             let pairs = pairs.clone();
             move |_| {
-                group.remove(&list);
-                pairs.borrow_mut().retain(|(_, _, l)| l != &list);
+                rows.remove(&row);
+                pairs.borrow_mut().retain(|(_, _, r)| r != &row);
             }
         });
         key_entry

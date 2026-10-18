@@ -132,11 +132,33 @@ pub fn delete_bucket(
     dialog.present(Some(parent));
 }
 
-/// Lets the user pick how long a presigned link stays valid.
+/// Link lifetimes: unit name, singular, seconds per unit, largest amount (S3 signatures last at most 7 days).
+const LINK_UNITS: [(&str, &str, u64, u32); 3] = [
+    ("Minutes", "minute", 60, 7 * 24 * 60),
+    ("Hours", "hour", 3600, 7 * 24),
+    ("Days", "day", 86_400, 7),
+];
+/// Index of "Days" in [`LINK_UNITS`], the default unit.
+const DEFAULT_LINK_UNIT: usize = 2;
+
+fn link_duration(amount: u32, unit: usize) -> Duration {
+    Duration::from_secs(u64::from(amount) * LINK_UNITS[unit].2)
+}
+
+fn link_label(amount: u32, unit: usize) -> String {
+    let name = LINK_UNITS[unit].1;
+    if amount == 1 {
+        format!("1 {name}")
+    } else {
+        format!("{amount} {name}s")
+    }
+}
+
+/// Lets the user pick how long a presigned link stays valid, from one minute up to the 7 days S3 allows.
 pub fn share_link(
     parent: &impl IsA<gtk::Widget>,
     name: &str,
-    on_accept: impl Fn(Duration, &'static str) + 'static,
+    on_accept: impl Fn(Duration, String) + 'static,
 ) {
     let dialog = adw::AlertDialog::new(
         Some("Share Link"),
@@ -144,23 +166,38 @@ pub fn share_link(
             "Anyone with the link can download “{name}” until it expires. The link is copied to the clipboard."
         )),
     );
-    dialog.add_responses(&[
-        ("cancel", "Cancel"),
-        ("1h", "1 Hour"),
-        ("1d", "1 Day"),
-        ("7d", "7 Days"),
-    ]);
-    dialog.set_response_appearance("1d", adw::ResponseAppearance::Suggested);
-    dialog.set_default_response(Some("1d"));
+    dialog.add_responses(&[("cancel", "Cancel"), ("copy", "Copy Link")]);
+    dialog.set_response_appearance("copy", adw::ResponseAppearance::Suggested);
+    dialog.set_default_response(Some("copy"));
     dialog.set_close_response("cancel");
-    dialog.connect_response(None, move |_, response| {
-        let (secs, label) = match response {
-            "1h" => (3600, "1 hour"),
-            "1d" => (86_400, "1 day"),
-            "7d" => (7 * 86_400, "7 days"),
-            _ => return,
-        };
-        on_accept(Duration::from_secs(secs), label);
+
+    let amount = adw::SpinRow::with_range(1.0, f64::from(LINK_UNITS[DEFAULT_LINK_UNIT].3), 1.0);
+    amount.set_title("Valid For");
+    let units = gtk::StringList::new(&LINK_UNITS.map(|u| u.0));
+    let unit = adw::ComboRow::builder()
+        .title("Unit")
+        .model(&units)
+        .selected(DEFAULT_LINK_UNIT as u32)
+        .build();
+    // Each unit has its own maximum, so the total never goes past 7 days.
+    unit.connect_selected_notify({
+        let amount = amount.clone();
+        move |u| {
+            let max = LINK_UNITS[u.selected() as usize].3;
+            amount.adjustment().set_upper(f64::from(max));
+            amount.set_value(amount.value().min(f64::from(max)));
+        }
+    });
+    let list = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .css_classes(["boxed-list"])
+        .build();
+    list.append(&amount);
+    list.append(&unit);
+    dialog.set_extra_child(Some(&list));
+    dialog.connect_response(Some("copy"), move |_, _| {
+        let (n, u) = (amount.value() as u32, unit.selected() as usize);
+        on_accept(link_duration(n, u), link_label(n, u));
     });
     dialog.present(Some(parent));
 }
@@ -202,4 +239,30 @@ pub fn error(parent: &impl IsA<gtk::Widget>, heading: &str, message: &str) {
     let clipboard = parent.as_ref().clipboard();
     dialog.connect_response(Some("copy"), move |_, _| clipboard.set_text(&text));
     dialog.present(Some(parent));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn link_durations() {
+        assert_eq!(link_duration(30, 0), Duration::from_secs(30 * 60));
+        assert_eq!(link_duration(12, 1), Duration::from_secs(12 * 3600));
+        assert_eq!(link_duration(7, 2), Duration::from_secs(7 * 86_400));
+    }
+
+    #[test]
+    fn link_labels() {
+        assert_eq!(link_label(1, 1), "1 hour");
+        assert_eq!(link_label(3, 2), "3 days");
+        assert_eq!(link_label(45, 0), "45 minutes");
+    }
+
+    #[test]
+    fn every_unit_tops_out_at_seven_days() {
+        for (i, u) in LINK_UNITS.iter().enumerate() {
+            assert_eq!(link_duration(u.3, i), Duration::from_secs(7 * 86_400));
+        }
+    }
 }

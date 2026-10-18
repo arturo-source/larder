@@ -46,7 +46,7 @@ Profiles are stored in `~/.config/larder/config.json`. **Secret keys are stored 
   the upload on the server
 - Download files or whole folders, create folders, rename or move objects and folders, delete recursively
 - The details pane shows metadata and previews text and images
-- **Share Link** creates a download link valid for 1 hour, 1 day or 7 days and copies it to the clipboard
+- **Share Link** creates a download link valid for as long as you choose, from 1 minute to 7 days (the most S3 allows), and copies it to the clipboard
 - Errors are explained in plain language; when only some objects can be deleted, each failure is listed
 
 ## Keyboard shortcuts

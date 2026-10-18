@@ -8,9 +8,9 @@ use adw::prelude::*;
 
 use crate::s3::{ObjectDetails, ObjectEdit};
 
-type Pairs = Rc<RefCell<Vec<(gtk::Entry, gtk::Entry, gtk::Box)>>>;
+type Pairs = Rc<RefCell<Vec<(adw::EntryRow, adw::EntryRow, gtk::ListBox)>>>;
 
-/// A group of editable name/value rows with an Add button.
+/// A group of editable name/value pairs, each a small list of two entry rows, with an Add button.
 struct PairsEditor {
     group: adw::PreferencesGroup,
     pairs: Pairs,
@@ -54,37 +54,32 @@ impl PairsEditor {
         pairs: &Pairs,
         key: &str,
         value: &str,
-    ) -> gtk::Entry {
-        let key_entry = gtk::Entry::builder()
-            .text(key)
-            .placeholder_text("Name")
-            .hexpand(true)
-            .build();
-        let value_entry = gtk::Entry::builder()
-            .text(value)
-            .placeholder_text("Value")
-            .hexpand(true)
-            .build();
+    ) -> adw::EntryRow {
+        let key_entry = adw::EntryRow::builder().title("Name").text(key).build();
+        let value_entry = adw::EntryRow::builder().title("Value").text(value).build();
         let remove = gtk::Button::builder()
             .icon_name("user-trash-symbolic")
             .tooltip_text("Remove")
             .valign(gtk::Align::Center)
             .css_classes(["flat"])
             .build();
-        let row = gtk::Box::builder().spacing(6).build();
-        row.append(&key_entry);
-        row.append(&value_entry);
-        row.append(&remove);
-        group.add(&row);
+        value_entry.add_suffix(&remove);
+        let list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .css_classes(["boxed-list"])
+            .build();
+        list.append(&key_entry);
+        list.append(&value_entry);
+        group.add(&list);
         pairs
             .borrow_mut()
-            .push((key_entry.clone(), value_entry, row.clone()));
+            .push((key_entry.clone(), value_entry, list.clone()));
         remove.connect_clicked({
             let group = group.clone();
             let pairs = pairs.clone();
             move |_| {
-                group.remove(&row);
-                pairs.borrow_mut().retain(|(_, _, r)| r != &row);
+                group.remove(&list);
+                pairs.borrow_mut().retain(|(_, _, l)| l != &list);
             }
         });
         key_entry

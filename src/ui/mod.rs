@@ -4,6 +4,7 @@ mod connect;
 mod details;
 mod dialogs;
 mod objects;
+mod properties;
 mod transfers;
 
 use std::cell::RefCell;
@@ -152,7 +153,11 @@ impl Win {
                 ("Download…", "win.download"),
                 ("Share Link…", "win.share"),
             ],
-            &[("Rename…", "win.rename"), ("Copy Key", "win.copy-key")],
+            &[
+                ("Rename…", "win.rename"),
+                ("Edit Properties…", "win.edit-properties"),
+                ("Copy Key", "win.copy-key"),
+            ],
             &[("Delete…", "win.delete")],
         ]);
         let upload_menu = menu(&[&[("Upload Folder…", "win.upload-folder")]]);
@@ -462,6 +467,7 @@ impl Win {
         self.add_action("delete", |w| w.delete_selected());
         self.add_action("rename", |w| w.rename_selected());
         self.add_action("share", |w| w.share_selected());
+        self.add_action("edit-properties", |w| w.edit_properties());
         self.add_action("copy-key", |w| {
             if let [e] = w.objects.selected().as_slice() {
                 w.window.clipboard().set_text(&e.key);
@@ -585,6 +591,8 @@ impl Win {
         self.details.download_button.connect_clicked(move |_| f());
         let f = with(|w| w.share_selected());
         self.details.share_button.connect_clicked(move |_| f());
+        let f = with(|w| w.edit_properties());
+        self.details.edit_button.connect_clicked(move |_| f());
         let f = with(|w| w.update_selection());
         self.objects
             .selection
@@ -1162,6 +1170,10 @@ impl Win {
         self.set_action_enabled("rename", single.is_some());
         self.set_action_enabled("copy-key", single.is_some());
         self.set_action_enabled("share", single.as_ref().is_some_and(|e| !e.is_dir));
+        self.set_action_enabled(
+            "edit-properties",
+            single.as_ref().is_some_and(|e| !e.is_dir),
+        );
         self.set_action_enabled("open", single.as_ref().is_some_and(|e| e.is_dir));
         self.update_actions();
 
@@ -1418,6 +1430,39 @@ impl Win {
                 });
             },
         );
+    }
+
+    fn edit_properties(self: &Rc<Self>) {
+        let selected = self.objects.selected();
+        let [entry] = selected.as_slice() else { return };
+        let Some(details) = self.details.current().filter(|d| d.key == entry.key) else {
+            self.toast("The properties are still loading");
+            return;
+        };
+        let this = self.clone();
+        let entry = entry.clone();
+        properties::edit_properties(&self.window, &details.clone(), move |edit| {
+            let Some((client, bucket, _)) = this.location() else {
+                return;
+            };
+            let (this, entry, details) = (this.clone(), entry.clone(), details.clone());
+            this.set_pending(1);
+            glib::spawn_future_local(async move {
+                let result =
+                    bg(async move { s3::update_object(&client, &bucket, &details, &edit).await })
+                        .await;
+                this.set_pending(-1);
+                match result {
+                    Ok(()) => {
+                        this.toast(&format!("Updated “{}”", base_name(&entry.key)));
+                        this.state.borrow_mut().details_key = None;
+                        this.load_details(entry);
+                        this.reload();
+                    }
+                    Err(e) => this.error("Couldn't Update Properties", &format!("{e:#}")),
+                }
+            });
+        });
     }
 
     fn share_selected(self: &Rc<Self>) {

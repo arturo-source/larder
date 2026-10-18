@@ -45,7 +45,10 @@ Profiles are stored in `~/.config/larder/config.json`. **Secret keys are stored 
   are uploaded in parts, four at a time; the progress bar shows speed and time left, and cancelling aborts
   the upload on the server
 - Download files or whole folders, create folders, rename or move objects and folders, delete recursively
-- The details pane shows metadata and previews text and images
+- The details pane shows headers, custom metadata and tags, and previews text and images. **Edit…** (or **Edit
+  Properties…** in the context menu) changes the content type and other headers, custom metadata and tags.
+  S3 can't edit headers in place, so that rewrites the object by copying it onto itself (a new version in
+  versioned buckets, and not possible above 5 GiB); changing only tags doesn't
 - **Share Link** creates a download link valid for as long as you choose, from 1 minute to 7 days (the most S3 allows), and copies it to the clipboard
 - Errors are explained in plain language; when only some objects can be deleted, each failure is listed
 

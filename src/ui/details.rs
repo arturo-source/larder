@@ -15,15 +15,19 @@ pub struct DetailsPane {
     props: Vec<(&'static str, adw::ActionRow)>,
     meta_group: adw::PreferencesGroup,
     meta_rows: RefCell<Vec<adw::ActionRow>>,
+    tags_group: adw::PreferencesGroup,
+    tag_rows: RefCell<Vec<adw::ActionRow>>,
+    current: RefCell<Option<ObjectDetails>>,
     preview_stack: gtk::Stack,
     picture: gtk::Picture,
     text: gtk::TextView,
     preview_note: gtk::Label,
     pub download_button: gtk::Button,
     pub share_button: gtk::Button,
+    pub edit_button: gtk::Button,
 }
 
-const PROPS: [(&str, &str); 8] = [
+const PROPS: [(&str, &str); 10] = [
     ("type", "Type"),
     ("size", "Size"),
     ("modified", "Modified"),
@@ -32,6 +36,8 @@ const PROPS: [(&str, &str); 8] = [
     ("version", "Version"),
     ("cache", "Cache-Control"),
     ("encoding", "Content-Encoding"),
+    ("disposition", "Content-Disposition"),
+    ("language", "Content-Language"),
 ];
 
 impl DetailsPane {
@@ -75,6 +81,14 @@ impl DetailsPane {
         buttons.append(&share_button);
 
         let props_group = adw::PreferencesGroup::builder().title("Properties").build();
+        let edit_button = gtk::Button::builder()
+            .label("Edit…")
+            .tooltip_text("Edit headers, metadata and tags")
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .sensitive(false)
+            .build();
+        props_group.set_header_suffix(Some(&edit_button));
         let props = PROPS
             .iter()
             .map(|(id, title)| {
@@ -89,6 +103,11 @@ impl DetailsPane {
             .collect();
         let meta_group = adw::PreferencesGroup::builder()
             .title("Custom Metadata")
+            .visible(false)
+            .build();
+
+        let tags_group = adw::PreferencesGroup::builder()
+            .title("Tags")
             .visible(false)
             .build();
 
@@ -152,6 +171,7 @@ impl DetailsPane {
         content.append(&preview_group);
         content.append(&props_group);
         content.append(&meta_group);
+        content.append(&tags_group);
 
         let root = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -167,12 +187,16 @@ impl DetailsPane {
             props,
             meta_group,
             meta_rows: RefCell::default(),
+            tags_group,
+            tag_rows: RefCell::default(),
+            current: RefCell::default(),
             preview_stack,
             picture,
             text,
             preview_note,
             download_button,
             share_button,
+            edit_button,
         }
     }
 
@@ -187,7 +211,15 @@ impl DetailsPane {
             row.set_visible(false);
         }
         self.set_metadata(&[]);
+        self.set_tags(&[]);
+        self.current.replace(None);
+        self.edit_button.set_sensitive(false);
         self.preview_stack.set_visible_child_name("loading");
+    }
+
+    /// The details of the selected object, once they have loaded.
+    pub fn current(&self) -> Option<ObjectDetails> {
+        self.current.borrow().clone()
     }
 
     pub fn show(&self, d: &ObjectDetails, preview: &Result<Preview, String>) {
@@ -207,6 +239,8 @@ impl DetailsPane {
                 "version" => d.version_id.clone().filter(|v| v != "null"),
                 "cache" => d.cache_control.clone(),
                 "encoding" => d.content_encoding.clone(),
+                "disposition" => d.content_disposition.clone(),
+                "language" => d.content_language.clone(),
                 _ => None,
             }
         };
@@ -225,6 +259,15 @@ impl DetailsPane {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         self.set_metadata(&meta);
+        let tags: Vec<(String, String)> = d
+            .tags
+            .iter()
+            .flatten()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        self.set_tags(&tags);
+        self.current.replace(Some(d.clone()));
+        self.edit_button.set_sensitive(true);
 
         match preview {
             Ok(Preview::Image(bytes)) => {
@@ -262,21 +305,34 @@ impl DetailsPane {
     }
 
     fn set_metadata(&self, meta: &[(String, String)]) {
-        for row in self.meta_rows.borrow_mut().drain(..) {
-            self.meta_group.remove(&row);
-        }
-        for (k, v) in meta {
-            let row = adw::ActionRow::builder()
-                .title(k)
-                .subtitle(v)
-                .subtitle_selectable(true)
-                .css_classes(["property"])
-                .build();
-            self.meta_group.add(&row);
-            self.meta_rows.borrow_mut().push(row);
-        }
-        self.meta_group.set_visible(!meta.is_empty());
+        fill_group(&self.meta_group, &self.meta_rows, meta);
     }
+
+    fn set_tags(&self, tags: &[(String, String)]) {
+        fill_group(&self.tags_group, &self.tag_rows, tags);
+    }
+}
+
+/// Replaces the rows of a group with one read-only row per pair, hiding the group when there are none.
+fn fill_group(
+    group: &adw::PreferencesGroup,
+    rows: &RefCell<Vec<adw::ActionRow>>,
+    pairs: &[(String, String)],
+) {
+    for row in rows.borrow_mut().drain(..) {
+        group.remove(&row);
+    }
+    for (k, v) in pairs {
+        let row = adw::ActionRow::builder()
+            .title(k)
+            .subtitle(v)
+            .subtitle_selectable(true)
+            .css_classes(["property"])
+            .build();
+        group.add(&row);
+        rows.borrow_mut().push(row);
+    }
+    group.set_visible(!pairs.is_empty());
 }
 
 pub fn base_name(key: &str) -> &str {

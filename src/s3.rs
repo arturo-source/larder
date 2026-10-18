@@ -17,7 +17,7 @@ use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::{ByteStream, DateTime, Length};
 use aws_sdk_s3::types::{
     BucketLocationConstraint, CompletedMultipartUpload, CompletedPart, CreateBucketConfiguration,
-    Delete, ObjectIdentifier,
+    Delete, MetadataDirective, ObjectIdentifier, StorageClass, Tag, Tagging, TaggingDirective,
 };
 use tokio::task::JoinSet;
 
@@ -178,7 +178,89 @@ pub struct ObjectDetails {
     pub version_id: Option<String>,
     pub cache_control: Option<String>,
     pub content_encoding: Option<String>,
+    pub content_disposition: Option<String>,
+    pub content_language: Option<String>,
     pub metadata: BTreeMap<String, String>,
+    /// `None` when the server can't tell us (e.g. it doesn't implement object tagging).
+    pub tags: Option<BTreeMap<String, String>>,
+}
+
+/// What the user can change on an existing object. Empty strings mean "not set".
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ObjectEdit {
+    pub content_type: String,
+    pub cache_control: String,
+    pub content_encoding: String,
+    pub content_disposition: String,
+    pub content_language: String,
+    pub metadata: BTreeMap<String, String>,
+    pub tags: BTreeMap<String, String>,
+}
+
+impl ObjectEdit {
+    pub fn from_details(d: &ObjectDetails) -> Self {
+        let text = |v: &Option<String>| v.clone().unwrap_or_default();
+        Self {
+            content_type: text(&d.content_type),
+            cache_control: text(&d.cache_control),
+            content_encoding: text(&d.content_encoding),
+            content_disposition: text(&d.content_disposition),
+            content_language: text(&d.content_language),
+            metadata: d.metadata.clone(),
+            tags: d.tags.clone().unwrap_or_default(),
+        }
+    }
+
+    /// Whether anything except the tags differs: changing those requires rewriting the object.
+    fn headers_differ(&self, other: &Self) -> bool {
+        Self {
+            tags: BTreeMap::new(),
+            ..self.clone()
+        } != Self {
+            tags: BTreeMap::new(),
+            ..other.clone()
+        }
+    }
+
+    /// Checks the limits S3 enforces, so mistakes are explained before the request is sent.
+    pub fn validate(&self) -> Result<(), String> {
+        for key in self.metadata.keys() {
+            if key.is_empty() || !key.bytes().all(|b| b.is_ascii_graphic() && b != b':') {
+                return Err(format!(
+                    "Metadata name “{key}” must be non-empty ASCII without spaces"
+                ));
+            }
+        }
+        let headers = [
+            ("Content-Type", &self.content_type),
+            ("Cache-Control", &self.cache_control),
+            ("Content-Encoding", &self.content_encoding),
+            ("Content-Disposition", &self.content_disposition),
+            ("Content-Language", &self.content_language),
+        ];
+        let values = headers
+            .into_iter()
+            .chain(self.metadata.iter().map(|(k, v)| (k.as_str(), v)));
+        for (name, value) in values {
+            if value.contains(['\r', '\n']) {
+                return Err(format!("“{name}” can't contain line breaks"));
+            }
+        }
+        if self.tags.len() > 10 {
+            return Err("An object can have at most 10 tags".into());
+        }
+        for (k, v) in &self.tags {
+            if k.is_empty() || k.chars().count() > 128 {
+                return Err(format!("Tag key “{k}” must be 1 to 128 characters"));
+            }
+            if v.chars().count() > 256 {
+                return Err(format!(
+                    "The value of tag “{k}” is longer than 256 characters"
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -801,6 +883,7 @@ pub async fn head(c: &Client, bucket: &str, key: &str) -> Result<ObjectDetails> 
         .send()
         .await
         .map_err(sdk_err)?;
+    let tags = get_tags(c, bucket, key).await.ok();
     Ok(ObjectDetails {
         key: key.to_string(),
         size: out.content_length().unwrap_or(0),
@@ -811,11 +894,105 @@ pub async fn head(c: &Client, bucket: &str, key: &str) -> Result<ObjectDetails> 
         version_id: out.version_id().map(str::to_string),
         cache_control: out.cache_control().map(str::to_string),
         content_encoding: out.content_encoding().map(str::to_string),
+        content_disposition: out.content_disposition().map(str::to_string),
+        content_language: out.content_language().map(str::to_string),
         metadata: out
             .metadata()
             .map(|m| m.clone().into_iter().collect())
             .unwrap_or_default(),
+        tags,
     })
+}
+
+async fn get_tags(c: &Client, bucket: &str, key: &str) -> Result<BTreeMap<String, String>> {
+    let out = c
+        .get_object_tagging()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .map_err(sdk_err)?;
+    Ok(out
+        .tag_set()
+        .iter()
+        .map(|t| (t.key().to_string(), t.value().to_string()))
+        .collect())
+}
+
+fn tag_set(tags: &BTreeMap<String, String>) -> Result<Tagging> {
+    let set = tags
+        .iter()
+        .map(|(k, v)| Tag::builder().key(k).value(v).build())
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Tagging::builder().set_tag_set(Some(set)).build()?)
+}
+
+/// Changes an object's headers, custom metadata and tags. S3 can't edit headers or metadata in place, so
+/// when they change the object is copied onto itself (which writes a new version in a versioned bucket
+/// and fails above 5 GiB); changing only the tags is a cheap separate call.
+pub async fn update_object(
+    c: &Client,
+    bucket: &str,
+    details: &ObjectDetails,
+    edit: &ObjectEdit,
+) -> Result<()> {
+    edit.validate().map_err(|e| anyhow!(e))?;
+    let key = &details.key;
+    let before = ObjectEdit::from_details(details);
+    if before.headers_differ(edit) {
+        let source = format!("{bucket}/{}", urlencoding::encode(key).replace("%2F", "/"));
+        let opt = |v: &str| (!v.is_empty()).then(|| v.to_string());
+        let mut req = c
+            .copy_object()
+            .bucket(bucket)
+            .copy_source(source)
+            .key(key)
+            .metadata_directive(MetadataDirective::Replace)
+            .set_content_type(opt(&edit.content_type))
+            .set_cache_control(opt(&edit.cache_control))
+            .set_content_encoding(opt(&edit.content_encoding))
+            .set_content_disposition(opt(&edit.content_disposition))
+            .set_content_language(opt(&edit.content_language))
+            .set_metadata(Some(edit.metadata.clone().into_iter().collect()))
+            // A copy resets the storage class unless it is given again.
+            .set_storage_class(details.storage_class.as_deref().map(StorageClass::from));
+        // Tags are only rewritten when this server told us about them in the first place.
+        if details.tags.is_some() {
+            req = req
+                .tagging_directive(TaggingDirective::Replace)
+                .tagging(tagging_query(&edit.tags));
+        }
+        req.send()
+            .await
+            .map_err(sdk_err)
+            .with_context(|| format!("updating {key}"))?;
+    } else if before.tags != edit.tags {
+        if edit.tags.is_empty() {
+            c.delete_object_tagging()
+                .bucket(bucket)
+                .key(key)
+                .send()
+                .await
+                .map_err(sdk_err)?;
+        } else {
+            c.put_object_tagging()
+                .bucket(bucket)
+                .key(key)
+                .tagging(tag_set(&edit.tags)?)
+                .send()
+                .await
+                .map_err(sdk_err)?;
+        }
+    }
+    Ok(())
+}
+
+/// Tags in the URL-query form `copy_object` expects: `k1=v1&k2=v2`.
+fn tagging_query(tags: &BTreeMap<String, String>) -> String {
+    tags.iter()
+        .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 fn extension(key: &str) -> String {
@@ -997,6 +1174,47 @@ mod tests {
     }
 
     #[test]
+    fn edit_validation() {
+        let ok = ObjectEdit::default();
+        assert!(ok.validate().is_ok());
+        let mut e = ok.clone();
+        e.metadata.insert("has space".into(), "x".into());
+        assert!(e.validate().is_err());
+        let mut e = ok.clone();
+        e.content_type = "text/plain\nX: y".into();
+        assert!(e.validate().is_err());
+        let mut e = ok.clone();
+        for i in 0..11 {
+            e.tags.insert(format!("k{i}"), "v".into());
+        }
+        assert!(e.validate().is_err());
+        e.tags.remove("k0");
+        assert!(e.validate().is_ok());
+    }
+
+    #[test]
+    fn tag_only_changes_do_not_rewrite_the_object() {
+        let before = ObjectEdit {
+            content_type: "text/plain".into(),
+            ..Default::default()
+        };
+        let mut after = before.clone();
+        after.tags.insert("env".into(), "prod".into());
+        assert!(!before.headers_differ(&after));
+        after.content_type = "text/html".into();
+        assert!(before.headers_differ(&after));
+    }
+
+    #[test]
+    fn tagging_query_is_encoded() {
+        let tags = BTreeMap::from([
+            ("a b".to_string(), "x&y".to_string()),
+            ("env".to_string(), "prod".to_string()),
+        ]);
+        assert_eq!(tagging_query(&tags), "a%20b=x%26y&env=prod");
+    }
+
+    #[test]
     fn human_sizes() {
         assert_eq!(human_size(12), "12 B");
         assert_eq!(human_size(2048), "2.0 KiB");
@@ -1053,6 +1271,26 @@ mod tests {
             Preview::Text { text, truncated } => assert!(text == "hello world" && !truncated),
             _ => panic!("expected text preview"),
         }
+
+        // Edit headers, metadata and tags; tags alone must not touch the headers.
+        let key = "docs/hello world+é.txt";
+        let mut edit = ObjectEdit::from_details(&d);
+        edit.content_type = "text/markdown".into();
+        edit.metadata.insert("owner".into(), "larder".into());
+        edit.tags.insert("env".into(), "prod".into());
+        update_object(&c, &bucket, &d, &edit).await?;
+        let d2 = head(&c, &bucket, key).await?;
+        assert_eq!(d2.content_type.as_deref(), Some("text/markdown"));
+        assert_eq!(d2.metadata.get("owner").map(String::as_str), Some("larder"));
+        if let Some(tags) = &d2.tags {
+            assert_eq!(tags.get("env").map(String::as_str), Some("prod"));
+        }
+        let mut edit2 = ObjectEdit::from_details(&d2);
+        edit2.tags.clear();
+        update_object(&c, &bucket, &d2, &edit2).await?;
+        let d3 = head(&c, &bucket, key).await?;
+        assert_eq!(d3.content_type.as_deref(), Some("text/markdown"));
+        assert!(d3.tags.is_none_or(|t| t.is_empty()));
 
         // Rename a file with special characters, then a whole folder.
         rename(&c, &bucket, "docs/hello world+é.txt", "docs/renamed.txt").await?;

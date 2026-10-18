@@ -25,6 +25,7 @@ pub struct DetailsPane {
     pub download_button: gtk::Button,
     pub share_button: gtk::Button,
     pub edit_button: gtk::Button,
+    pub versions_button: gtk::Button,
 }
 
 const PROPS: [(&str, &str); 10] = [
@@ -89,7 +90,7 @@ impl DetailsPane {
             .sensitive(false)
             .build();
         props_group.set_header_suffix(Some(&edit_button));
-        let props = PROPS
+        let props: Vec<(&'static str, adw::ActionRow)> = PROPS
             .iter()
             .map(|(id, title)| {
                 let row = adw::ActionRow::builder()
@@ -101,6 +102,15 @@ impl DetailsPane {
                 (*id, row)
             })
             .collect();
+        let versions_button = gtk::Button::builder()
+            .label("Versions…")
+            .tooltip_text("Restore, download or delete earlier versions")
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        if let Some((_, row)) = props.iter().find(|(id, _)| *id == "version") {
+            row.add_suffix(&versions_button);
+        }
         let meta_group = adw::PreferencesGroup::builder()
             .title("Custom Metadata")
             .visible(false)
@@ -197,6 +207,7 @@ impl DetailsPane {
             download_button,
             share_button,
             edit_button,
+            versions_button,
         }
     }
 

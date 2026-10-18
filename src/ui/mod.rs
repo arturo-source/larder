@@ -6,6 +6,7 @@ mod dialogs;
 mod objects;
 mod properties;
 mod transfers;
+mod versions;
 
 use std::cell::RefCell;
 use std::future::Future;
@@ -156,6 +157,7 @@ impl Win {
             &[
                 ("Rename…", "win.rename"),
                 ("Edit Properties…", "win.edit-properties"),
+                ("Versions…", "win.versions"),
                 ("Copy Key", "win.copy-key"),
             ],
             &[("Delete…", "win.delete")],
@@ -468,6 +470,7 @@ impl Win {
         self.add_action("rename", |w| w.rename_selected());
         self.add_action("share", |w| w.share_selected());
         self.add_action("edit-properties", |w| w.edit_properties());
+        self.add_action("versions", |w| w.show_versions());
         self.add_action("copy-key", |w| {
             if let [e] = w.objects.selected().as_slice() {
                 w.window.clipboard().set_text(&e.key);
@@ -593,6 +596,8 @@ impl Win {
         self.details.share_button.connect_clicked(move |_| f());
         let f = with(|w| w.edit_properties());
         self.details.edit_button.connect_clicked(move |_| f());
+        let f = with(|w| w.show_versions());
+        self.details.versions_button.connect_clicked(move |_| f());
         let f = with(|w| w.update_selection());
         self.objects
             .selection
@@ -1174,6 +1179,7 @@ impl Win {
             "edit-properties",
             single.as_ref().is_some_and(|e| !e.is_dir),
         );
+        self.set_action_enabled("versions", single.as_ref().is_some_and(|e| !e.is_dir));
         self.set_action_enabled("open", single.as_ref().is_some_and(|e| e.is_dir));
         self.update_actions();
 

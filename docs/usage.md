@@ -49,6 +49,9 @@ Profiles are stored in `~/.config/larder/config.json`. **Secret keys are stored 
   Properties…** in the context menu) changes the content type and other headers, custom metadata and tags.
   S3 can't edit headers in place, so that rewrites the object by copying it onto itself (a new version in
   versioned buckets, and not possible above 5 GiB); changing only tags doesn't
+- **Versions…** (details pane or context menu) lists every stored version of an object in a versioned bucket:
+  download one, restore an older one as the newest, or delete a version permanently. Removing a delete marker
+  brings a deleted object back
 - **Share Link** creates a download link valid for as long as you choose, from 1 minute to 7 days (the most S3 allows), and copies it to the clipboard
 - Errors are explained in plain language; when only some objects can be deleted, each failure is listed
 

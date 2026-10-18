@@ -113,11 +113,11 @@ jobs:
           larder --version
           xvfb-run -s "-screen 0 1280x800x24" sh -c \
             'larder & sleep 8; import -window root screenshot-linux-${{ matrix.arch }}.png; kill $!'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package-linux-${{ matrix.arch }}
           path: dist/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: screenshot-linux-${{ matrix.arch }}
           path: screenshot-*.png
@@ -145,7 +145,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libadwaita
             mingw-w64-ucrt-x86_64-adwaita-icon-theme
       # rust-cache can't find the MSYS2 toolchain, so cache the build output directly.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: target
           key: windows-target-${{ hashFiles('Cargo.lock') }}
@@ -185,11 +185,11 @@ jobs:
           $bmp.Save("screenshot-windows.png")
           if (-not (Get-Process larder -ErrorAction SilentlyContinue)) { throw "larder.exe is not running" }
           Stop-Process -Name larder
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package-windows-x86_64
           path: dist/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: screenshot-windows
           path: screenshot-*.png
@@ -277,11 +277,11 @@ jobs:
           sleep 10
           screencapture -x screenshot-macos-software.png
           kill -0 $pid && kill $pid
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package-macos-arm64
           path: dist/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: screenshot-macos
           path: screenshot-*.png
@@ -320,7 +320,7 @@ jobs:
           tar xJf dist/*-vendored.tar.xz -C offline
           cd offline/larder-*
           CARGO_HOME="$RUNNER_TEMP/empty-cargo-home" cargo check --offline --locked
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package-source
           path: dist/*
@@ -334,7 +334,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: package-*
           path: dist
@@ -357,7 +357,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           subject-path: dist/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: larder-packages
           path: dist/*

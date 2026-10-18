@@ -85,6 +85,37 @@ impl ObjectsView {
             column_view: column_view.clone(),
         };
 
+        // Clicking the empty space below the rows clears the selection (and so closes the details pane).
+        let blank = gtk::GestureClick::builder()
+            .button(gdk::BUTTON_PRIMARY)
+            .build();
+        blank.connect_pressed({
+            let selection = selection.clone();
+            let column_view = column_view.downgrade();
+            move |_, _, x, y| {
+                let Some(column_view) = column_view.upgrade() else {
+                    return;
+                };
+                let mut current = column_view.pick(x, y, gtk::PickFlags::DEFAULT);
+                let mut on_list = false;
+                while let Some(widget) = current {
+                    if widget == *column_view.upcast_ref::<gtk::Widget>() {
+                        break;
+                    }
+                    match widget.css_name().as_str() {
+                        "row" | "header" | "scrollbar" => return,
+                        "listview" => on_list = true,
+                        _ => {}
+                    }
+                    current = widget.parent();
+                }
+                if on_list {
+                    selection.unselect_all();
+                }
+            }
+        });
+        column_view.add_controller(blank);
+
         let name_col = column(
             &ctx,
             "Name",

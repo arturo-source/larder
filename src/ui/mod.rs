@@ -574,6 +574,22 @@ impl Win {
     }
 
     fn connect_signals(self: &Rc<Self>) {
+        // Escape clears the selection, which also closes the details pane. The search bar and dialogs
+        // handle their own Escape first.
+        let esc = gtk::EventControllerKey::new();
+        let weak = Rc::downgrade(self);
+        esc.connect_key_pressed(move |_, key, _, _| {
+            let selection = weak.upgrade().map(|w| w.objects.selection.clone());
+            match selection {
+                Some(s) if key == gtk::gdk::Key::Escape && s.selection().size() > 0 => {
+                    s.unselect_all();
+                    glib::Propagation::Stop
+                }
+                _ => glib::Propagation::Proceed,
+            }
+        });
+        self.window.add_controller(esc);
+
         let weak = Rc::downgrade(self);
         let with = move |f: fn(&Rc<Self>)| {
             let weak = weak.clone();
